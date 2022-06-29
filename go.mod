@@ -1,4 +1,4 @@
-module github.com/ethersphere/manifest
+module github.com/FavorLabs/manifest
 
 go 1.14
 

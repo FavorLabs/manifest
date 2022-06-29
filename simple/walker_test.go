@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/ethersphere/manifest/simple"
+	"github.com/FavorLabs/manifest/simple"
 )
 
 func TestWalkEntry(t *testing.T) {

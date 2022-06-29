@@ -34,6 +34,7 @@ var (
 type Node struct {
 	nodeType       uint8
 	refBytesSize   int
+	index          int64
 	obfuscationKey []byte
 	ref            []byte // reference to uninstantiated Node persisted serialised
 	entry          []byte
@@ -149,6 +150,18 @@ func (n *Node) Metadata() map[string]string {
 	return n.metadata
 }
 
+func (n *Node) Index() int64 {
+	return n.index
+}
+
+func (n *Node) Prefix() [][]byte {
+	prefixes := make([][]byte, 0, len(n.forks))
+	for _, f := range n.forks {
+		prefixes = append(prefixes, f.prefix)
+	}
+	return prefixes
+}
+
 // LookupNode finds the node for a path or returns error if not found
 func (n *Node) LookupNode(ctx context.Context, path []byte, l Loader) (*Node, error) {
 	select {
@@ -170,7 +183,13 @@ func (n *Node) LookupNode(ctx context.Context, path []byte, l Loader) (*Node, er
 	}
 	c := common(f.prefix, path)
 	if len(c) == len(f.prefix) {
-		return f.Node.LookupNode(ctx, path[len(c):], l)
+		f.Node.index = n.index
+		node, err := f.Node.LookupNode(ctx, path[len(c):], l)
+		if err != nil {
+			return node, err
+		}
+		n.index = node.index
+		return node, err
 	}
 	return nil, notFound(path)
 }
@@ -181,11 +200,14 @@ func (n *Node) Lookup(ctx context.Context, path []byte, l Loader) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
+	if !node.IsValueType() && len(path) > 0 {
+		return nil, notFound(path)
+	}
 	return node.entry, nil
 }
 
 // Add adds an entry to the path
-func (n *Node) Add(ctx context.Context, path []byte, entry []byte, metadata map[string]string, ls LoadSaver) error {
+func (n *Node) Add(ctx context.Context, path, entry []byte, metadata map[string]string, ls LoadSaver) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -199,14 +221,13 @@ func (n *Node) Add(ctx context.Context, path []byte, entry []byte, metadata map[
 		if len(entry) > 0 {
 			n.refBytesSize = len(entry)
 		}
-	} else {
-		if len(entry) > 0 && n.refBytesSize != len(entry) {
-			return fmt.Errorf("invalid entry size: %d, expected: %d", len(entry), n.refBytesSize)
-		}
+	} else if len(entry) > 0 && n.refBytesSize != len(entry) {
+		return fmt.Errorf("invalid entry size: %d, expected: %d", len(entry), n.refBytesSize)
 	}
 
 	if len(path) == 0 {
 		n.entry = entry
+		n.makeValue()
 		if len(metadata) > 0 {
 			n.metadata = metadata
 			n.makeWithMetadata()
