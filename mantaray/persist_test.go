@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/LoganFL/manifest/mantaray"
+	"github.com/FavorLabs/manifest/mantaray"
 )
 
 func TestPersistIdempotence(t *testing.T) {

@@ -1,4 +1,4 @@
-module github.com/LoganFL/manifest
+module github.com/FavorLabs/manifest
 
 go 1.14
 

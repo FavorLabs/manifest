@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/LoganFL/manifest/mantaray"
+	"github.com/FavorLabs/manifest/mantaray"
 )
 
 func TestNilPath(t *testing.T) {

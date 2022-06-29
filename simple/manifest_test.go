@@ -11,7 +11,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/LoganFL/manifest/simple"
+	"github.com/FavorLabs/manifest/simple"
 )
 
 // randomAddress generates a random address.
