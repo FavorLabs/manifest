@@ -11,7 +11,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ethersphere/manifest/simple"
+	"github.com/LoganFL/manifest/simple"
 )
 
 // randomAddress generates a random address.
@@ -177,7 +177,7 @@ func checkLength(t *testing.T, m simple.Manifest, length int) {
 }
 
 // checkEntry verifies that an entry is equal to the one retrieved from the given manifest and path.
-func checkEntry(t *testing.T, m simple.Manifest, reference string, path string) {
+func checkEntry(t *testing.T, m simple.Manifest, reference, path string) {
 	t.Helper()
 
 	n, err := m.Lookup(path)

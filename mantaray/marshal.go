@@ -57,11 +57,13 @@ const (
 var (
 	version01HashBytes []byte
 	version02HashBytes []byte
+	zero32             []byte
 )
 
 func init() {
 	initVersion(version01HashString, &version01HashBytes)
 	initVersion(version02HashString, &version02HashBytes)
+	zero32 = make([]byte, 32)
 }
 
 func initVersion(hash string, bytes *[]byte) {
@@ -75,17 +77,15 @@ func initVersion(hash string, bytes *[]byte) {
 }
 
 var (
-	// ErrTooShort too short input
+	// ErrTooShort signals too short input.
 	ErrTooShort = errors.New("serialised input too short")
-	// ErrInvalid input to seralise invalid
-	ErrInvalid = errors.New("input invalid")
-	// ErrForkIvalid shows embedded node on a fork has no reference
-	ErrForkIvalid = errors.New("fork node without reference")
+	// ErrInvalidInput signals invalid input to serialise.
+	ErrInvalidInput = errors.New("input invalid")
+	// ErrInvalidVersionHash signals unknown version of hash.
+	ErrInvalidVersionHash = errors.New("invalid version hash")
 )
 
-var obfuscationKeyFn = func(p []byte) (n int, err error) {
-	return rand.Read(p)
-}
+var obfuscationKeyFn = rand.Read
 
 // SetObfuscationKeyFn allows configuring custom function for generating
 // obfuscation key.
@@ -98,7 +98,7 @@ func SetObfuscationKeyFn(fn func([]byte) (int, error)) {
 // MarshalBinary serialises the node
 func (n *Node) MarshalBinary() (bytes []byte, err error) {
 	if n.forks == nil {
-		return nil, ErrInvalid
+		return nil, ErrInvalidInput
 	}
 
 	// header
@@ -186,12 +186,12 @@ func (bb *bitsForBytes) fromBytes(b []byte) {
 }
 
 func (bb *bitsForBytes) set(b byte) {
-	bb.bits[uint8(b)/8] |= 1 << (uint8(b) % 8)
+	bb.bits[b/8] |= 1 << (b % 8)
 }
 
 //nolint,unused
 func (bb *bitsForBytes) get(b byte) bool {
-	return bb.getUint8(uint8(b))
+	return bb.getUint8(b)
 }
 
 func (bb *bitsForBytes) getUint8(i uint8) bool {
@@ -201,7 +201,7 @@ func (bb *bitsForBytes) getUint8(i uint8) bool {
 func (bb *bitsForBytes) iter(f func(byte) error) error {
 	for i := uint8(0); ; i++ {
 		if bb.getUint8(i) {
-			if err := f(byte(i)); err != nil {
+			if err := f(i); err != nil {
 				return err
 			}
 		}
@@ -249,6 +249,7 @@ func (n *Node) UnmarshalBinary(data []byte) error {
 		bb := &bitsForBytes{}
 		bb.fromBytes(data[offset:])
 		offset += 32 // skip forks
+		n.index++
 		return bb.iter(func(b byte) error {
 			f := &fork{}
 
@@ -261,7 +262,7 @@ func (n *Node) UnmarshalBinary(data []byte) error {
 			if err != nil {
 				return fmt.Errorf("%w on byte '%x'", err, []byte{b})
 			}
-
+			f.index = n.index
 			n.forks[b] = f
 			offset += nodeForkPreReferenceSize + refBytesSize
 			return nil
@@ -272,10 +273,18 @@ func (n *Node) UnmarshalBinary(data []byte) error {
 
 		n.entry = append([]byte{}, data[nodeHeaderSize:nodeHeaderSize+refBytesSize]...)
 		offset := nodeHeaderSize + refBytesSize // skip entry
+		// Currently we don't persist the root nodeType when we marshal the manifest, as a result
+		// the root nodeType information is lost on Unmarshal. This causes issues when we want to
+		// perform a path 'Walk' on the root. If there is more than 1 fork, the root node type
+		// is an edge, so we will deduce this information from index byte array
+		if !bytes.Equal(data[offset:offset+32], zero32) && !n.IsEdgeType() {
+			n.makeEdge()
+		}
 		n.forks = make(map[byte]*fork)
 		bb := &bitsForBytes{}
 		bb.fromBytes(data[offset:])
 		offset += 32 // skip forks
+		n.index++
 		return bb.iter(func(b byte) error {
 			f := &fork{}
 
@@ -283,7 +292,7 @@ func (n *Node) UnmarshalBinary(data []byte) error {
 				return fmt.Errorf("not enough bytes for node fork: %d (%d) on byte '%x'", (len(data) - offset), (nodeForkTypeBytesSize), []byte{b})
 			}
 
-			nodeType := uint8(data[offset])
+			nodeType := data[offset]
 
 			nodeForkSize := nodeForkPreReferenceSize + refBytesSize
 
@@ -311,19 +320,19 @@ func (n *Node) UnmarshalBinary(data []byte) error {
 					return fmt.Errorf("%w on byte '%x'", err, []byte{b})
 				}
 			}
-
+			f.index = n.index
 			n.forks[b] = f
 			offset += nodeForkSize
 			return nil
 		})
 	}
 
-	return fmt.Errorf("invalid version hash %x", versionHash)
+	return fmt.Errorf("%x: %w", versionHash, ErrInvalidVersionHash)
 }
 
 func (f *fork) fromBytes(b []byte) error {
-	nodeType := uint8(b[0])
-	prefixLen := int(uint8(b[1]))
+	nodeType := b[0]
+	prefixLen := int(b[1])
 
 	if prefixLen == 0 || prefixLen > nodePrefixMaxSize {
 		return fmt.Errorf("invalid prefix length: %d", prefixLen)
@@ -337,8 +346,8 @@ func (f *fork) fromBytes(b []byte) error {
 }
 
 func (f *fork) fromBytes02(b []byte, refBytesSize, metadataBytesSize int) error {
-	nodeType := uint8(b[0])
-	prefixLen := int(uint8(b[1]))
+	nodeType := b[0]
+	prefixLen := int(b[1])
 
 	if prefixLen == 0 || prefixLen > nodePrefixMaxSize {
 		return fmt.Errorf("invalid prefix length: %d", prefixLen)
@@ -371,8 +380,7 @@ func (f *fork) bytes() (b []byte, err error) {
 		err = fmt.Errorf("node reference size > 256: %d", len(r))
 		return
 	}
-	b = append(b, f.Node.nodeType)
-	b = append(b, uint8(len(f.prefix)))
+	b = append(b, f.Node.nodeType, uint8(len(f.prefix)))
 
 	prefixBytes := make([]byte, nodePrefixMaxSize)
 	copy(prefixBytes, f.prefix)
