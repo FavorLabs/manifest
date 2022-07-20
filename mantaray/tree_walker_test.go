@@ -176,7 +176,7 @@ func TestWalkLevelAtExpandAll(t *testing.T) {
 
 			walkedCount := 0
 
-			walker := func(nodeType int, path, prefix, hash []byte) error {
+			walker := func(nodeType int, path, prefix, hash []byte, metadata map[string]string) error {
 				walkedCount++
 
 				pathFound := false
@@ -362,7 +362,7 @@ func TestWalkLevelAtCollapse(t *testing.T) {
 
 			walkedCount := 0
 
-			walker := func(nodeType int, path, prefix, hash []byte) error {
+			walker := func(nodeType int, path, prefix, hash []byte, metadata map[string]string) error {
 				walkedCount++
 
 				pathFound := false
