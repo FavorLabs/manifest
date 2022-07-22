@@ -499,12 +499,10 @@ func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, 
 		return err
 	}
 
-	target, _, err := n.matchPath(ctx, newPath, ls)
+	_, _, err = n.matchPath(ctx, newPath, ls)
 	if err != nil {
 		return err
 	}
-
-	target.ref = nil
 
 	sourcePath := sourcePrefix
 	if !sourceDir {
@@ -545,7 +543,46 @@ func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, 
 		}
 	}
 
-	return target.Save(ctx, ls)
+	root, err := n.removeRef(ctx, newPath, ls)
+	if err != nil {
+		return err
+	}
+	root.ref = nil
+
+	return root.Save(ctx, ls)
+}
+
+func (n *Node) removeRef(ctx context.Context, path []byte, l Loader) (*Node, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+	if len(path) == 0 {
+		return n, nil
+	}
+	if n.forks == nil {
+		if err := n.load(ctx, l); err != nil {
+			return nil, err
+		}
+	}
+	f := n.forks[path[0]]
+	if f == nil {
+		return nil, ErrNotFound
+	}
+	c := common(f.prefix, path)
+	if len(c) == len(f.prefix) {
+		target, err := f.Node.removeRef(ctx, path[len(c):], l)
+		if err != nil {
+			return nil, err
+		}
+		target.ref = nil
+		return n, nil
+	}
+	if bytes.HasPrefix(f.prefix, path) {
+		return n, nil
+	}
+	return nil, ErrNotFound
 }
 
 func (n *Node) matchPath(ctx context.Context, path []byte, l Loader) (*Node, []byte, error) {
