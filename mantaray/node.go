@@ -499,10 +499,12 @@ func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, 
 		return err
 	}
 
-	_, _, err = n.matchPath(ctx, newPath, ls)
+	target, _, err := n.matchPath(ctx, newPath, ls)
 	if err != nil {
 		return err
 	}
+
+	target.ref = nil
 
 	sourcePath := sourcePrefix
 	if !sourceDir {
@@ -543,7 +545,7 @@ func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, 
 		}
 	}
 
-	return n.Save(ctx, ls)
+	return target.Save(ctx, ls)
 }
 
 func (n *Node) matchPath(ctx context.Context, path []byte, l Loader) (*Node, []byte, error) {
