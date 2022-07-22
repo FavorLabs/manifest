@@ -543,16 +543,21 @@ func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, 
 		}
 	}
 
-	root, err := n.removeRef(ctx, newPath, ls)
+	return nil
+}
+
+func (n *Node) Update(ctx context.Context, path []byte, l Loader) error {
+	root, err := n.update(ctx, path, l)
 	if err != nil {
 		return err
 	}
+
 	root.ref = nil
 
-	return root.Save(ctx, ls)
+	return nil
 }
 
-func (n *Node) removeRef(ctx context.Context, path []byte, l Loader) (*Node, error) {
+func (n *Node) update(ctx context.Context, path []byte, l Loader) (*Node, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -572,7 +577,7 @@ func (n *Node) removeRef(ctx context.Context, path []byte, l Loader) (*Node, err
 	}
 	c := common(f.prefix, path)
 	if len(c) == len(f.prefix) {
-		target, err := f.Node.removeRef(ctx, path[len(c):], l)
+		target, err := f.Node.update(ctx, path[len(c):], l)
 		if err != nil {
 			return nil, err
 		}
