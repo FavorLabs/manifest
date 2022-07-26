@@ -517,7 +517,7 @@ func (n *Node) update(ctx context.Context, path []byte, l Loader) (*Node, error)
 	}
 	f := n.forks[path[0]]
 	if f == nil {
-		return nil, ErrNotFound
+		return n, nil
 	}
 	c := common(f.prefix, path)
 	if len(c) == len(f.prefix) {
