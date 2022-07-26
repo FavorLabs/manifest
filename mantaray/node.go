@@ -209,98 +209,15 @@ func (n *Node) Lookup(ctx context.Context, path []byte, l Loader) ([]byte, error
 
 // Add adds an entry to the path
 func (n *Node) Add(ctx context.Context, path, entry []byte, metadata map[string]string, ls LoadSaver) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-	if n.refBytesSize == 0 {
-		if len(entry) > 256 {
-			return fmt.Errorf("node entry size > 256: %d", len(entry))
-		}
-		// empty entry for directories
-		if len(entry) > 0 {
-			n.refBytesSize = len(entry)
-		}
-	} else if len(entry) > 0 && n.refBytesSize != len(entry) {
-		return fmt.Errorf("invalid entry size: %d, expected: %d", len(entry), n.refBytesSize)
+	nn := New()
+	nn.entry = entry
+
+	if len(metadata) > 0 {
+		nn.metadata = metadata
+		nn.makeWithMetadata()
 	}
 
-	if len(path) == 0 {
-		n.entry = entry
-		n.makeValue()
-		if len(metadata) > 0 {
-			n.metadata = metadata
-			n.makeWithMetadata()
-		}
-		n.ref = nil
-		return nil
-	}
-	if n.forks == nil {
-		if err := n.load(ctx, ls); err != nil {
-			return err
-		}
-		n.ref = nil
-	}
-	f := n.forks[path[0]]
-	if f == nil {
-		nn := New()
-		if len(n.obfuscationKey) > 0 {
-			nn.SetObfuscationKey(n.obfuscationKey)
-		}
-		nn.refBytesSize = n.refBytesSize
-		// check for prefix size limit
-		if len(path) > nodePrefixMaxSize {
-			prefix := path[:nodePrefixMaxSize]
-			rest := path[nodePrefixMaxSize:]
-			err := nn.Add(ctx, rest, entry, metadata, ls)
-			if err != nil {
-				return err
-			}
-			nn.updateIsWithPathSeparator(prefix)
-			n.forks[path[0]] = &fork{prefix, nn}
-			n.makeEdge()
-			return nil
-		}
-		nn.entry = entry
-		if len(metadata) > 0 {
-			nn.metadata = metadata
-			nn.makeWithMetadata()
-		}
-		nn.makeValue()
-		nn.updateIsWithPathSeparator(path)
-		n.forks[path[0]] = &fork{path, nn}
-		n.makeEdge()
-		return nil
-	}
-	c := common(f.prefix, path)
-	rest := f.prefix[len(c):]
-	nn := f.Node
-	if len(rest) > 0 {
-		// move current common prefix node
-		nn = New()
-		if len(n.obfuscationKey) > 0 {
-			nn.SetObfuscationKey(n.obfuscationKey)
-		}
-		nn.refBytesSize = n.refBytesSize
-		f.Node.updateIsWithPathSeparator(rest)
-		nn.forks[rest[0]] = &fork{rest, f.Node}
-		nn.makeEdge()
-		// if common path is full path new node is value type
-		if len(path) == len(c) {
-			nn.makeValue()
-		}
-	}
-	// NOTE: special case on edge split
-	nn.updateIsWithPathSeparator(path)
-	// add new for shared prefix
-	err := nn.Add(ctx, path[len(c):], entry, metadata, ls)
-	if err != nil {
-		return err
-	}
-	n.forks[path[0]] = &fork{c, nn}
-	n.makeEdge()
-	return nil
+	return n.addNode(ctx, path, nn, ls)
 }
 
 func (n *Node) updateIsWithPathSeparator(path []byte) {
@@ -340,7 +257,20 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 		delete(n.forks, path[0])
 		return nil
 	}
-	return f.Node.Remove(ctx, rest, ls)
+	err := f.Node.Remove(ctx, rest, ls)
+	if err != nil {
+		return err
+	}
+	if len(f.forks) == 1 {
+		var ff *fork
+		for _, fork := range f.forks {
+			ff = fork
+		}
+		ff.prefix = append(f.prefix, ff.prefix...)
+		// merge fork
+		n.forks[path[0]] = ff
+	}
+	return nil
 }
 
 func common(a, b []byte) (c []byte) {
@@ -399,12 +329,18 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 
 	if len(path) == 0 {
 		n.entry = node.entry
-		n.nodeType = node.nodeType
+		if node.nodeType != 0 {
+			n.nodeType |= node.nodeType
+		} else {
+			n.makeValue()
+		}
 		if len(node.metadata) > 0 {
 			n.metadata = node.metadata
 		}
 		n.ref = nil
-		n.forks = node.forks
+		if len(node.forks) > 0 {
+			n.forks = node.forks
+		}
 		if len(node.obfuscationKey) > 0 {
 			n.SetObfuscationKey(node.obfuscationKey)
 		}
@@ -436,6 +372,14 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 			n.makeEdge()
 			return nil
 		}
+		if node.refBytesSize == 0 {
+			node.refBytesSize = n.refBytesSize
+		}
+		if len(node.obfuscationKey) == 0 && len(n.obfuscationKey) > 0 {
+			node.obfuscationKey = n.obfuscationKey
+		}
+		node.makeValue()
+		node.updateIsWithPathSeparator(path)
 		n.forks[path[0]] = &fork{path, node}
 		n.makeEdge()
 		return nil
