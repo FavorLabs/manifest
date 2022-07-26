@@ -255,6 +255,8 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 	if len(rest) == 0 {
 		// full path matched
 		delete(n.forks, path[0])
+		// clear ref
+		n.ref = nil
 		return nil
 	}
 	err := f.Node.Remove(ctx, rest, ls)
@@ -270,6 +272,8 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 		// merge fork
 		n.forks[path[0]] = ff
 	}
+	// clear parent ref recursively
+	n.ref = nil
 	return nil
 }
 
@@ -369,6 +373,7 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 			}
 			nn.updateIsWithPathSeparator(prefix)
 			n.forks[path[0]] = &fork{prefix, nn}
+			n.ref = nil
 			n.makeEdge()
 			return nil
 		}
@@ -376,11 +381,12 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 			node.refBytesSize = n.refBytesSize
 		}
 		if len(node.obfuscationKey) == 0 && len(n.obfuscationKey) > 0 {
-			node.obfuscationKey = n.obfuscationKey
+			node.SetObfuscationKey(n.obfuscationKey)
 		}
 		node.makeValue()
 		node.updateIsWithPathSeparator(path)
 		n.forks[path[0]] = &fork{path, node}
+		n.ref = nil
 		n.makeEdge()
 		return nil
 	}
@@ -410,6 +416,7 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 		return err
 	}
 	n.forks[path[0]] = &fork{c, nn}
+	n.ref = nil
 	n.makeEdge()
 	return nil
 }
@@ -488,50 +495,6 @@ func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, 
 	}
 
 	return nil
-}
-
-func (n *Node) Update(ctx context.Context, path []byte, l Loader) error {
-	root, err := n.update(ctx, path, l)
-	if err != nil {
-		return err
-	}
-
-	root.ref = nil
-
-	return nil
-}
-
-func (n *Node) update(ctx context.Context, path []byte, l Loader) (*Node, error) {
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-	}
-	if len(path) == 0 {
-		return n, nil
-	}
-	if n.forks == nil {
-		if err := n.load(ctx, l); err != nil {
-			return nil, err
-		}
-	}
-	f := n.forks[path[0]]
-	if f == nil {
-		return n, nil
-	}
-	c := common(f.prefix, path)
-	if len(c) == len(f.prefix) {
-		target, err := f.Node.update(ctx, path[len(c):], l)
-		if err != nil {
-			return nil, err
-		}
-		target.ref = nil
-		return n, nil
-	}
-	if bytes.HasPrefix(f.prefix, path) {
-		return n, nil
-	}
-	return nil, ErrNotFound
 }
 
 func (n *Node) matchPath(ctx context.Context, path []byte, l Loader) (*Node, []byte, error) {
