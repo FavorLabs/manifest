@@ -189,7 +189,7 @@ func (bb *bitsForBytes) set(b byte) {
 	bb.bits[b/8] |= 1 << (b % 8)
 }
 
-//nolint,unused
+// nolint,unused
 func (bb *bitsForBytes) get(b byte) bool {
 	return bb.getUint8(b)
 }
@@ -243,6 +243,7 @@ func (n *Node) UnmarshalBinary(data []byte) error {
 
 		refBytesSize := int(data[nodeHeaderSize-1])
 
+		n.refBytesSize = refBytesSize
 		n.entry = append([]byte{}, data[nodeHeaderSize:nodeHeaderSize+refBytesSize]...)
 		offset := nodeHeaderSize + refBytesSize // skip entry
 		n.forks = make(map[byte]*fork)
@@ -271,6 +272,7 @@ func (n *Node) UnmarshalBinary(data []byte) error {
 
 		refBytesSize := int(data[nodeHeaderSize-1])
 
+		n.refBytesSize = refBytesSize
 		n.entry = append([]byte{}, data[nodeHeaderSize:nodeHeaderSize+refBytesSize]...)
 		offset := nodeHeaderSize + refBytesSize // skip entry
 		// Currently we don't persist the root nodeType when we marshal the manifest, as a result
