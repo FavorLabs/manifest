@@ -253,7 +253,7 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 	}
 	rest := path[len(f.prefix):]
 	if len(rest) == 0 {
-		if f.IsValueType() {
+		if f.IsValueType() && len(f.forks) > 0 {
 			f.makeNotValue()
 		} else {
 			// full path matched
