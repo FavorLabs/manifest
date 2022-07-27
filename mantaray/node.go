@@ -253,10 +253,14 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 	}
 	rest := path[len(f.prefix):]
 	if len(rest) == 0 {
-		// full path matched
-		delete(n.forks, path[0])
-		// clear ref
-		n.ref = nil
+		if f.IsValueType() {
+			f.makeNotValue()
+		} else {
+			// full path matched
+			delete(n.forks, path[0])
+			// clear ref
+			n.ref = nil
+		}
 		return nil
 	}
 	err := f.Node.Remove(ctx, rest, ls)
@@ -450,18 +454,20 @@ func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, 
 		return err
 	}
 
-	_, _, err = n.matchPath(ctx, newPath, ls)
-	if err != nil {
-		return err
-	}
-
 	sourcePath := sourcePrefix
 	if !sourceDir {
-		lastSlash := bytes.LastIndexByte(path, os.PathSeparator)
-		sourcePath = path[lastSlash+1:]
+		sourcePath = path[bytes.LastIndexByte(path, os.PathSeparator)+1:]
 	}
 
-	targetPath := append(newPath, sourcePath...)
+	targetPath := newPath
+	if targetDir {
+		_, _, err = n.matchPath(ctx, newPath, ls)
+		if err != nil {
+			return err
+		}
+
+		targetPath = append(newPath, sourcePath...)
+	}
 
 	if len(source.forks) == 0 {
 		err = n.addNode(ctx, targetPath, source, ls)
@@ -522,17 +528,25 @@ func (n *Node) matchPath(ctx context.Context, path []byte, l Loader) (*Node, []b
 		}
 
 		return nil, nil, ErrNotFound
-	} else {
-		if path[len(path)-1] == os.PathSeparator {
-			if !bytes.HasPrefix(f.prefix, path) {
-				return nil, nil, ErrNotFound
-			}
-		} else {
-			if !bytes.Equal(f.prefix, path) && !f.IsValueType() {
-				return nil, nil, ErrNotFound
-			}
+	}
+	if path[len(path)-1] == os.PathSeparator {
+		if !bytes.HasPrefix(f.prefix, path) {
+			return nil, nil, ErrNotFound
 		}
 
 		return f.Node, f.prefix[len(path):], nil
 	}
+	if !bytes.Equal(f.prefix, path) && !f.IsValueType() {
+		return nil, nil, ErrNotFound
+	}
+	nn := New()
+	nn.makeValue()
+	nn.entry = f.entry
+	if len(f.obfuscationKey) > 0 {
+		nn.SetObfuscationKey(f.obfuscationKey)
+	}
+	nn.ref = f.ref
+	nn.refBytesSize = f.refBytesSize
+	nn.metadata = f.metadata
+	return nn, f.prefix, nil
 }

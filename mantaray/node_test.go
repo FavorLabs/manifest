@@ -249,6 +249,20 @@ func TestRemove(t *testing.T) {
 				[]byte("img/2/test1.png"),
 			},
 		},
+		{
+			name: "common-prefix",
+			toAdd: []mantaray.NodeEntry{
+				{
+					Path: []byte("apple.png"),
+				},
+				{
+					Path: []byte("apple.png.bak"),
+				},
+			},
+			toRemove: [][]byte{
+				[]byte("apple.png"),
+			},
+		},
 	} {
 		ctx := context.Background()
 		t.Run(tc.name, func(t *testing.T) {
@@ -376,7 +390,6 @@ func TestMove(t *testing.T) {
 		{
 			toAdd: [][]byte{
 				[]byte("index.html"),
-				[]byte("img/test/"),
 				[]byte("img/test/oho.png"),
 				[]byte("img/test/old/test.png"),
 				[]byte("img/test/olds/person.jpg"),
@@ -401,7 +414,6 @@ func TestMove(t *testing.T) {
 				[]byte("src/defaults/1/apple.png.bak"),
 			},
 			unwanted: [][]byte{
-				[]byte("img/test/"),
 				[]byte("img/test/oho.png"),
 				[]byte("img/test/old/test.png"),
 				[]byte("img/test/olds/person.jpg"),
@@ -543,6 +555,44 @@ func TestMove(t *testing.T) {
 				[]byte("a/aaaaa/a/aa/aaa/aa.mp4"),
 			},
 		},
+		{
+			toAdd: [][]byte{
+				[]byte("test/a/a/a.png"),
+			},
+			target: [][]byte{
+				[]byte("test/a/a/a.png"),
+				[]byte("test/a/a/b.png"),
+			},
+			expected: [][]byte{
+				[]byte("test/a/a/b.png"),
+			},
+			unwanted: [][]byte{
+				[]byte("test/a/a/a.png"),
+			},
+		},
+		{
+			toAdd: [][]byte{
+				[]byte("aaaaaa"),
+				[]byte("aaaaab"),
+				[]byte("abbbb"),
+				[]byte("abbba"),
+				[]byte("bbbbba"),
+				[]byte("bbbaaa"),
+				[]byte("bbbaab"),
+				[]byte("aa"),
+				[]byte("b"),
+			},
+			target: [][]byte{
+				[]byte("aa"),
+				[]byte("abbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+			},
+			expected: [][]byte{
+				[]byte("abbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+			},
+			unwanted: [][]byte{
+				[]byte("aa"),
+			},
+		},
 	} {
 		ctx := context.Background()
 		t.Run(fmt.Sprintf("move-{%s}-to-{%s}", tc.target[0], tc.target[1]), func(t *testing.T) {
@@ -574,7 +624,7 @@ func TestMove(t *testing.T) {
 			}
 
 			for _, unwant := range tc.unwanted {
-				_, err := n.LookupNode(ctx, unwant, ls)
+				_, err := n.Lookup(ctx, unwant, ls)
 				if !errors.Is(err, mantaray.ErrNotFound) {
 					t.Fatalf("path %s should be removed, but find it or got error %v", unwant, err)
 				}
