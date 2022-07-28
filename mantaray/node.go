@@ -269,7 +269,7 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 		}
 	} else {
 		// must match directory leading
-		if path[len(path)] != PathSeparator && !bytes.HasPrefix(f.prefix, path) {
+		if path[len(path)-1] != PathSeparator && !bytes.HasPrefix(f.prefix, path) {
 			return ErrNotFound
 		}
 		// full path matched
