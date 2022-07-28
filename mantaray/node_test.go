@@ -263,6 +263,20 @@ func TestRemove(t *testing.T) {
 				[]byte("apple.png"),
 			},
 		},
+		{
+			name: "collapsed-prefix",
+			toAdd: []mantaray.NodeEntry{
+				{
+					Path: []byte("img/1.png"),
+				},
+				{
+					Path: []byte("robots.txt"),
+				},
+			},
+			toRemove: [][]byte{
+				[]byte("img/"),
+			},
+		},
 	} {
 		ctx := context.Background()
 		t.Run(tc.name, func(t *testing.T) {

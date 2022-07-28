@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 )
 
 const (
@@ -247,25 +246,37 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 	if f == nil {
 		return ErrNotFound
 	}
-	prefixIndex := bytes.Index(path, f.prefix)
-	if prefixIndex != 0 {
-		return ErrNotFound
-	}
-	rest := path[len(f.prefix):]
-	if len(rest) == 0 {
-		if f.IsValueType() && len(f.forks) > 0 {
-			f.makeNotValue()
-		} else {
-			// full path matched
-			delete(n.forks, path[0])
-			// clear ref
-			n.ref = nil
+	if len(f.prefix) <= len(path) {
+		prefixIndex := bytes.Index(path, f.prefix)
+		if prefixIndex != 0 {
+			return ErrNotFound
 		}
+		rest := path[len(f.prefix):]
+		if len(rest) == 0 {
+			if f.IsValueType() && len(f.forks) > 0 {
+				f.makeNotValue()
+			} else {
+				// full path matched
+				delete(n.forks, path[0])
+				// clear ref
+				n.ref = nil
+			}
+			return nil
+		}
+		err := f.Node.Remove(ctx, rest, ls)
+		if err != nil {
+			return err
+		}
+	} else {
+		// must match directory leading
+		if path[len(path)] != PathSeparator && !bytes.HasPrefix(f.prefix, path) {
+			return ErrNotFound
+		}
+		// full path matched
+		delete(n.forks, path[0])
+		// clear ref
+		n.ref = nil
 		return nil
-	}
-	err := f.Node.Remove(ctx, rest, ls)
-	if err != nil {
-		return err
 	}
 	if len(f.forks) == 1 {
 		var ff *fork
@@ -438,8 +449,8 @@ func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, 
 		return ErrEmptyPath
 	}
 
-	sourceDir := path[len(path)-1] == os.PathSeparator
-	targetDir := newPath[len(newPath)-1] == os.PathSeparator
+	sourceDir := path[len(path)-1] == PathSeparator
+	targetDir := newPath[len(newPath)-1] == PathSeparator
 
 	if sourceDir && !targetDir {
 		return ErrInvalidInput
@@ -456,7 +467,7 @@ func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, 
 
 	sourcePath := sourcePrefix
 	if !sourceDir {
-		sourcePath = path[bytes.LastIndexByte(path, os.PathSeparator)+1:]
+		sourcePath = path[bytes.LastIndexByte(path, PathSeparator)+1:]
 	}
 
 	targetPath := newPath
@@ -529,7 +540,7 @@ func (n *Node) matchPath(ctx context.Context, path []byte, l Loader) (*Node, []b
 
 		return nil, nil, ErrNotFound
 	}
-	if path[len(path)-1] == os.PathSeparator {
+	if path[len(path)-1] == PathSeparator {
 		if !bytes.HasPrefix(f.prefix, path) {
 			return nil, nil, ErrNotFound
 		}
