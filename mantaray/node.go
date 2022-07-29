@@ -110,12 +110,12 @@ func (n *Node) makeWithMetadata() {
 	n.nodeType = n.nodeType | nodeTypeWithMetadata
 }
 
-//nolint,unused
+// nolint,unused
 func (n *Node) makeNotValue() {
 	n.nodeType = (nodeTypeMask ^ nodeTypeValue) & n.nodeType
 }
 
-//nolint,unused
+// nolint,unused
 func (n *Node) makeNotEdge() {
 	n.nodeType = (nodeTypeMask ^ nodeTypeEdge) & n.nodeType
 }
@@ -124,7 +124,7 @@ func (n *Node) makeNotWithPathSeparator() {
 	n.nodeType = (nodeTypeMask ^ nodeTypeWithPathSeparator) & n.nodeType
 }
 
-//nolint,unused
+// nolint,unused
 func (n *Node) makeNotWithMetadata() {
 	n.nodeType = (nodeTypeMask ^ nodeTypeWithMetadata) & n.nodeType
 }
@@ -208,98 +208,15 @@ func (n *Node) Lookup(ctx context.Context, path []byte, l Loader) ([]byte, error
 
 // Add adds an entry to the path
 func (n *Node) Add(ctx context.Context, path, entry []byte, metadata map[string]string, ls LoadSaver) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-	if n.refBytesSize == 0 {
-		if len(entry) > 256 {
-			return fmt.Errorf("node entry size > 256: %d", len(entry))
-		}
-		// empty entry for directories
-		if len(entry) > 0 {
-			n.refBytesSize = len(entry)
-		}
-	} else if len(entry) > 0 && n.refBytesSize != len(entry) {
-		return fmt.Errorf("invalid entry size: %d, expected: %d", len(entry), n.refBytesSize)
+	nn := New()
+	nn.entry = entry
+
+	if len(metadata) > 0 {
+		nn.metadata = metadata
+		nn.makeWithMetadata()
 	}
 
-	if len(path) == 0 {
-		n.entry = entry
-		n.makeValue()
-		if len(metadata) > 0 {
-			n.metadata = metadata
-			n.makeWithMetadata()
-		}
-		n.ref = nil
-		return nil
-	}
-	if n.forks == nil {
-		if err := n.load(ctx, ls); err != nil {
-			return err
-		}
-		n.ref = nil
-	}
-	f := n.forks[path[0]]
-	if f == nil {
-		nn := New()
-		if len(n.obfuscationKey) > 0 {
-			nn.SetObfuscationKey(n.obfuscationKey)
-		}
-		nn.refBytesSize = n.refBytesSize
-		// check for prefix size limit
-		if len(path) > nodePrefixMaxSize {
-			prefix := path[:nodePrefixMaxSize]
-			rest := path[nodePrefixMaxSize:]
-			err := nn.Add(ctx, rest, entry, metadata, ls)
-			if err != nil {
-				return err
-			}
-			nn.updateIsWithPathSeparator(prefix)
-			n.forks[path[0]] = &fork{prefix, nn}
-			n.makeEdge()
-			return nil
-		}
-		nn.entry = entry
-		if len(metadata) > 0 {
-			nn.metadata = metadata
-			nn.makeWithMetadata()
-		}
-		nn.makeValue()
-		nn.updateIsWithPathSeparator(path)
-		n.forks[path[0]] = &fork{path, nn}
-		n.makeEdge()
-		return nil
-	}
-	c := common(f.prefix, path)
-	rest := f.prefix[len(c):]
-	nn := f.Node
-	if len(rest) > 0 {
-		// move current common prefix node
-		nn = New()
-		if len(n.obfuscationKey) > 0 {
-			nn.SetObfuscationKey(n.obfuscationKey)
-		}
-		nn.refBytesSize = n.refBytesSize
-		f.Node.updateIsWithPathSeparator(rest)
-		nn.forks[rest[0]] = &fork{rest, f.Node}
-		nn.makeEdge()
-		// if common path is full path new node is value type
-		if len(path) == len(c) {
-			nn.makeValue()
-		}
-	}
-	// NOTE: special case on edge split
-	nn.updateIsWithPathSeparator(path)
-	// add new for shared prefix
-	err := nn.Add(ctx, path[len(c):], entry, metadata, ls)
-	if err != nil {
-		return err
-	}
-	n.forks[path[0]] = &fork{c, nn}
-	n.makeEdge()
-	return nil
+	return n.addNode(ctx, path, nn, ls)
 }
 
 func (n *Node) updateIsWithPathSeparator(path []byte) {
@@ -329,17 +246,50 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 	if f == nil {
 		return ErrNotFound
 	}
-	prefixIndex := bytes.Index(path, f.prefix)
-	if prefixIndex != 0 {
-		return ErrNotFound
-	}
-	rest := path[len(f.prefix):]
-	if len(rest) == 0 {
+	if len(f.prefix) <= len(path) {
+		prefixIndex := bytes.Index(path, f.prefix)
+		if prefixIndex != 0 {
+			return ErrNotFound
+		}
+		rest := path[len(f.prefix):]
+		if len(rest) == 0 {
+			if f.IsValueType() && len(f.forks) > 0 {
+				f.makeNotValue()
+			} else {
+				// full path matched
+				delete(n.forks, path[0])
+				// clear ref
+				n.ref = nil
+			}
+			return nil
+		}
+		err := f.Node.Remove(ctx, rest, ls)
+		if err != nil {
+			return err
+		}
+	} else {
+		// must match directory leading
+		if path[len(path)-1] != PathSeparator && !bytes.HasPrefix(f.prefix, path) {
+			return ErrNotFound
+		}
 		// full path matched
 		delete(n.forks, path[0])
+		// clear ref
+		n.ref = nil
 		return nil
 	}
-	return f.Node.Remove(ctx, rest, ls)
+	if len(f.forks) == 1 {
+		var ff *fork
+		for _, fork := range f.forks {
+			ff = fork
+		}
+		ff.prefix = append(f.prefix, ff.prefix...)
+		// merge fork
+		n.forks[path[0]] = ff
+	}
+	// clear parent ref recursively
+	n.ref = nil
+	return nil
 }
 
 func common(a, b []byte) (c []byte) {
@@ -376,4 +326,238 @@ func (n *Node) HasPrefix(ctx context.Context, path []byte, l Loader) (bool, erro
 		return true, nil
 	}
 	return false, nil
+}
+
+func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSaver) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	if n.refBytesSize == 0 {
+		if len(node.entry) > 256 {
+			return fmt.Errorf("node entry size > 256: %d", len(node.entry))
+		}
+		// empty entry for directories
+		if len(node.entry) > 0 {
+			n.refBytesSize = len(node.entry)
+		}
+	} else if len(node.entry) > 0 && n.refBytesSize != len(node.entry) {
+		return fmt.Errorf("invalid entry size: %d, expected: %d", len(node.entry), n.refBytesSize)
+	}
+
+	if len(path) == 0 {
+		n.entry = node.entry
+		if node.nodeType != 0 {
+			n.nodeType |= node.nodeType
+		} else {
+			n.makeValue()
+		}
+		if len(node.metadata) > 0 {
+			n.metadata = node.metadata
+		}
+		n.ref = nil
+		if len(node.forks) > 0 {
+			n.forks = node.forks
+		}
+		if len(node.obfuscationKey) > 0 {
+			n.SetObfuscationKey(node.obfuscationKey)
+		}
+		return nil
+	}
+	if n.forks == nil {
+		if err := n.load(ctx, ls); err != nil {
+			return err
+		}
+		n.ref = nil
+	}
+	f := n.forks[path[0]]
+	if f == nil {
+		// check for prefix size limit
+		if len(path) > nodePrefixMaxSize {
+			prefix := path[:nodePrefixMaxSize]
+			rest := path[nodePrefixMaxSize:]
+			nn := New()
+			if len(n.obfuscationKey) > 0 {
+				nn.SetObfuscationKey(n.obfuscationKey)
+			}
+			nn.refBytesSize = n.refBytesSize
+			err := nn.addNode(ctx, rest, node, ls)
+			if err != nil {
+				return err
+			}
+			nn.updateIsWithPathSeparator(prefix)
+			n.forks[path[0]] = &fork{prefix, nn}
+			n.ref = nil
+			n.makeEdge()
+			return nil
+		}
+		if node.refBytesSize == 0 {
+			node.refBytesSize = n.refBytesSize
+		}
+		if len(node.obfuscationKey) == 0 && len(n.obfuscationKey) > 0 {
+			node.SetObfuscationKey(n.obfuscationKey)
+		}
+		node.makeValue()
+		node.updateIsWithPathSeparator(path)
+		n.forks[path[0]] = &fork{path, node}
+		n.ref = nil
+		n.makeEdge()
+		return nil
+	}
+	c := common(f.prefix, path)
+	rest := f.prefix[len(c):]
+	nn := f.Node
+	if len(rest) > 0 {
+		// move current common prefix node
+		nn = New()
+		if len(n.obfuscationKey) > 0 {
+			nn.SetObfuscationKey(n.obfuscationKey)
+		}
+		nn.refBytesSize = n.refBytesSize
+		f.Node.updateIsWithPathSeparator(rest)
+		nn.forks[rest[0]] = &fork{rest, f.Node}
+		nn.makeEdge()
+		// if common path is full path new node is value type
+		if len(path) == len(c) {
+			nn.makeValue()
+		}
+	}
+	// NOTE: special case on edge split
+	nn.updateIsWithPathSeparator(path)
+	// add new for shared prefix
+	err := nn.addNode(ctx, path[len(c):], node, ls)
+	if err != nil {
+		return err
+	}
+	n.forks[path[0]] = &fork{c, nn}
+	n.ref = nil
+	n.makeEdge()
+	return nil
+}
+
+func (n *Node) Copy(ctx context.Context, path, newPath []byte, ls LoadSaver) error {
+	return n.move(ctx, path, newPath, true, ls)
+}
+
+func (n *Node) Move(ctx context.Context, path, newPath []byte, ls LoadSaver) error {
+	return n.move(ctx, path, newPath, false, ls)
+}
+
+func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, ls LoadSaver) error {
+	if len(path) == 0 {
+		return ErrEmptyPath
+	}
+
+	sourceDir := path[len(path)-1] == PathSeparator
+	targetDir := newPath[len(newPath)-1] == PathSeparator
+
+	if sourceDir && !targetDir {
+		return ErrInvalidInput
+	}
+
+	if bytes.HasPrefix(newPath, path) {
+		return ErrInvalidInput
+	}
+
+	source, sourcePrefix, err := n.matchPath(ctx, path, ls)
+	if err != nil {
+		return err
+	}
+
+	sourcePath := sourcePrefix
+	if !sourceDir {
+		sourcePath = path[bytes.LastIndexByte(path, PathSeparator)+1:]
+	}
+
+	targetPath := newPath
+	if targetDir {
+		_, _, err = n.matchPath(ctx, newPath, ls)
+		if err != nil {
+			return err
+		}
+
+		targetPath = append(newPath, sourcePath...)
+	}
+
+	if len(source.forks) == 0 {
+		err = n.addNode(ctx, targetPath, source, ls)
+		if err != nil {
+			return err
+		}
+	} else {
+		for _, node := range source.forks {
+			addPath := make([]byte, len(targetPath))
+			copy(addPath, targetPath)
+			addPath = append(addPath, node.prefix...)
+			err = n.addNode(ctx, addPath, node.Node, ls)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	if !keepOrigin {
+		if sourceDir {
+			err = n.Remove(ctx, append(path, sourcePrefix...), ls)
+			if err != nil {
+				return err
+			}
+		} else {
+			err = n.Remove(ctx, path, ls)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (n *Node) matchPath(ctx context.Context, path []byte, l Loader) (*Node, []byte, error) {
+	select {
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	default:
+	}
+	if n.forks == nil {
+		if err := n.load(ctx, l); err != nil {
+			return nil, nil, err
+		}
+	}
+	if len(path) == 0 {
+		return n, nil, nil
+	}
+	f := n.forks[path[0]]
+	if f == nil {
+		return nil, nil, ErrNotFound
+	}
+	if len(f.prefix) < len(path) {
+		c := common(f.prefix, path)
+		if len(c) == len(f.prefix) {
+			return f.Node.matchPath(ctx, path[len(c):], l)
+		}
+
+		return nil, nil, ErrNotFound
+	}
+	if path[len(path)-1] == PathSeparator {
+		if !bytes.HasPrefix(f.prefix, path) {
+			return nil, nil, ErrNotFound
+		}
+
+		return f.Node, f.prefix[len(path):], nil
+	}
+	if !bytes.Equal(f.prefix, path) && !f.IsValueType() {
+		return nil, nil, ErrNotFound
+	}
+	nn := New()
+	nn.makeValue()
+	nn.entry = f.entry
+	if len(f.obfuscationKey) > 0 {
+		nn.SetObfuscationKey(f.obfuscationKey)
+	}
+	nn.ref = f.ref
+	nn.refBytesSize = f.refBytesSize
+	nn.metadata = f.metadata
+	return nn, f.prefix, nil
 }
