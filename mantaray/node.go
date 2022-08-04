@@ -398,7 +398,9 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 		if len(node.obfuscationKey) == 0 && len(n.obfuscationKey) > 0 {
 			node.SetObfuscationKey(n.obfuscationKey)
 		}
-		node.makeValue()
+		if !node.IsEdgeType() {
+			node.makeValue()
+		}
 		node.updateIsWithPathSeparator(path)
 		n.forks[path[0]] = &fork{path, node}
 		n.ref = nil
@@ -436,15 +438,15 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 	return nil
 }
 
-func (n *Node) Copy(ctx context.Context, path, newPath []byte, ls LoadSaver) error {
-	return n.move(ctx, path, newPath, true, ls)
+func (n *Node) Copy(ctx context.Context, target *Node, path, newPath []byte, ls LoadSaver) error {
+	return n.move(ctx, target, path, newPath, true, ls)
 }
 
-func (n *Node) Move(ctx context.Context, path, newPath []byte, ls LoadSaver) error {
-	return n.move(ctx, path, newPath, false, ls)
+func (n *Node) Move(ctx context.Context, target *Node, path, newPath []byte, ls LoadSaver) error {
+	return n.move(ctx, target, path, newPath, false, ls)
 }
 
-func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, ls LoadSaver) error {
+func (n *Node) move(ctx context.Context, target *Node, path, newPath []byte, keepOrigin bool, ls LoadSaver) error {
 	if len(path) == 0 {
 		return ErrEmptyPath
 	}
@@ -465,6 +467,13 @@ func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, 
 		return err
 	}
 
+	if len(source.forks) == 0 {
+		err = source.load(ctx, ls)
+		if err != nil {
+			return err
+		}
+	}
+
 	sourcePath := sourcePrefix
 	if !sourceDir {
 		sourcePath = path[bytes.LastIndexByte(path, PathSeparator)+1:]
@@ -472,7 +481,7 @@ func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, 
 
 	targetPath := newPath
 	if targetDir {
-		_, _, err = n.matchPath(ctx, newPath, ls)
+		_, _, err = target.matchPath(ctx, newPath, ls)
 		if err != nil {
 			return err
 		}
@@ -481,7 +490,7 @@ func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, 
 	}
 
 	if len(source.forks) == 0 {
-		err = n.addNode(ctx, targetPath, source, ls)
+		err = target.addNode(ctx, targetPath, source, ls)
 		if err != nil {
 			return err
 		}
@@ -490,7 +499,7 @@ func (n *Node) move(ctx context.Context, path, newPath []byte, keepOrigin bool, 
 			addPath := make([]byte, len(targetPath))
 			copy(addPath, targetPath)
 			addPath = append(addPath, node.prefix...)
-			err = n.addNode(ctx, addPath, node.Node, ls)
+			err = target.addNode(ctx, addPath, node.Node, ls)
 			if err != nil {
 				return err
 			}
