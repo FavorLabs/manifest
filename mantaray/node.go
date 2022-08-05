@@ -392,6 +392,7 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 			n.makeEdge()
 			return nil
 		}
+		node.ref = nil
 		if node.refBytesSize == 0 {
 			node.refBytesSize = n.refBytesSize
 		}
@@ -458,7 +459,7 @@ func (n *Node) move(ctx context.Context, target *Node, path, newPath []byte, kee
 		return ErrInvalidInput
 	}
 
-	if bytes.HasPrefix(newPath, path) {
+	if target != n && bytes.HasPrefix(newPath, path) {
 		return ErrInvalidInput
 	}
 
