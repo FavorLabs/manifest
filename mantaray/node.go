@@ -392,6 +392,7 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 			n.makeEdge()
 			return nil
 		}
+		node.ref = nil
 		if node.refBytesSize == 0 {
 			node.refBytesSize = n.refBytesSize
 		}
@@ -438,15 +439,15 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 	return nil
 }
 
-func (n *Node) Copy(ctx context.Context, target *Node, path, newPath []byte, ls LoadSaver) error {
-	return n.move(ctx, target, path, newPath, true, ls)
+func (n *Node) Copy(ctx context.Context, target *Node, path, newPath []byte, create bool, ls LoadSaver) error {
+	return n.move(ctx, target, path, newPath, create, true, ls)
 }
 
-func (n *Node) Move(ctx context.Context, target *Node, path, newPath []byte, ls LoadSaver) error {
-	return n.move(ctx, target, path, newPath, false, ls)
+func (n *Node) Move(ctx context.Context, target *Node, path, newPath []byte, create bool, ls LoadSaver) error {
+	return n.move(ctx, target, path, newPath, create, false, ls)
 }
 
-func (n *Node) move(ctx context.Context, target *Node, path, newPath []byte, keepOrigin bool, ls LoadSaver) error {
+func (n *Node) move(ctx context.Context, target *Node, path, newPath []byte, create, keepOrigin bool, ls LoadSaver) error {
 	if len(path) == 0 {
 		return ErrEmptyPath
 	}
@@ -458,7 +459,7 @@ func (n *Node) move(ctx context.Context, target *Node, path, newPath []byte, kee
 		return ErrInvalidInput
 	}
 
-	if bytes.HasPrefix(newPath, path) {
+	if target != n && bytes.HasPrefix(newPath, path) {
 		return ErrInvalidInput
 	}
 
@@ -481,9 +482,11 @@ func (n *Node) move(ctx context.Context, target *Node, path, newPath []byte, kee
 
 	targetPath := newPath
 	if targetDir {
-		_, _, err = target.matchPath(ctx, newPath, ls)
-		if err != nil {
-			return err
+		if !create {
+			_, _, err = target.matchPath(ctx, newPath, ls)
+			if err != nil {
+				return err
+			}
 		}
 
 		targetPath = append(newPath, sourcePath...)
