@@ -52,6 +52,7 @@ const (
 	nodeTypeEdge              = uint8(4)
 	nodeTypeWithPathSeparator = uint8(8)
 	nodeTypeWithMetadata      = uint8(16)
+	nodeTypeEmptyDirectory    = uint8(32)
 
 	nodeTypeMask = uint8(255)
 )
@@ -94,6 +95,10 @@ func (n *Node) IsWithMetadataType() bool {
 	return n.nodeType&nodeTypeWithMetadata == nodeTypeWithMetadata
 }
 
+func (n *Node) IsEmptyDirectory() bool {
+	return n.nodeType&nodeTypeEmptyDirectory == nodeTypeEmptyDirectory
+}
+
 func (n *Node) makeValue() {
 	n.nodeType = n.nodeType | nodeTypeValue
 }
@@ -108,6 +113,10 @@ func (n *Node) makeWithPathSeparator() {
 
 func (n *Node) makeWithMetadata() {
 	n.nodeType = n.nodeType | nodeTypeWithMetadata
+}
+
+func (n *Node) makeEmptyDirectory() {
+	n.nodeType = n.nodeType | nodeTypeEmptyDirectory
 }
 
 // nolint,unused
@@ -127,6 +136,10 @@ func (n *Node) makeNotWithPathSeparator() {
 // nolint,unused
 func (n *Node) makeNotWithMetadata() {
 	n.nodeType = (nodeTypeMask ^ nodeTypeWithMetadata) & n.nodeType
+}
+
+func (n *Node) makeNotEmptyDirectory() {
+	n.nodeType = (nodeTypeMask ^ nodeTypeEmptyDirectory) & n.nodeType
 }
 
 func (n *Node) SetObfuscationKey(obfuscationKey []byte) {
@@ -253,14 +266,20 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 		}
 		rest := path[len(f.prefix):]
 		if len(rest) == 0 {
-			if f.IsValueType() && len(f.forks) > 0 {
+			if f.IsValueType() {
 				f.makeNotValue()
-			} else {
-				// full path matched
-				delete(n.forks, path[0])
-				// clear ref
-				n.ref = nil
+				f.entry = nil
 			}
+			if f.IsWithPathSeparatorType() {
+				f.prefix = f.prefix[:bytes.LastIndexByte(f.prefix, PathSeparator)+1]
+				f.makeEmptyDirectory()
+				f.updateIsWithPathSeparator(f.prefix)
+			}
+			if !f.IsWithPathSeparatorType() {
+				delete(n.forks, path[0])
+			}
+			// clear ref
+			n.ref = nil
 			return nil
 		}
 		err := f.Node.Remove(ctx, rest, ls)
@@ -272,8 +291,17 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 		if path[len(path)-1] != PathSeparator && !bytes.HasPrefix(f.prefix, path) {
 			return ErrNotFound
 		}
-		// full path matched
-		delete(n.forks, path[0])
+		f.prefix = f.prefix[:len(path)]
+		if len(f.prefix) == 0 {
+			delete(n.forks, path[0])
+		} else {
+			if f.IsValueType() {
+				f.makeNotValue()
+				f.entry = nil
+			}
+			f.makeEmptyDirectory()
+			f.ref = nil
+		}
 		// clear ref
 		n.ref = nil
 		return nil
@@ -432,11 +460,24 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 	// NOTE: special case on edge split
 	nn.updateIsWithPathSeparator(path)
 	// add new for shared prefix
-	err := nn.addNode(ctx, path[len(c):], node, ls)
-	if err != nil {
-		return err
+	if nn.IsEmptyDirectory() {
+		nn.makeNotEmptyDirectory()
+		nn.entry = node.entry
+		nn.metadata = node.metadata
+		if len(node.obfuscationKey) > 0 {
+			nn.SetObfuscationKey(node.obfuscationKey)
+		}
+		nn.nodeType |= node.nodeType
+		nn.forks = node.forks
+		nn.refBytesSize = node.refBytesSize
+		n.forks[path[0]] = &fork{path, nn}
+	} else {
+		err := nn.addNode(ctx, path[len(c):], node, ls)
+		if err != nil {
+			return err
+		}
+		n.forks[path[0]] = &fork{c, nn}
 	}
-	n.forks[path[0]] = &fork{c, nn}
 	n.ref = nil
 	n.makeEdge()
 	return nil

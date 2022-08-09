@@ -97,10 +97,6 @@ func SetObfuscationKeyFn(fn func([]byte) (int, error)) {
 
 // MarshalBinary serialises the node
 func (n *Node) MarshalBinary() (bytes []byte, err error) {
-	if n.forks == nil {
-		return nil, ErrInvalidInput
-	}
-
 	// header
 
 	headerBytes := make([]byte, nodeHeaderSize)
