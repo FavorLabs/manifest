@@ -462,7 +462,7 @@ func (n *Node) move(ctx context.Context, target *Node, path, newPath []byte, cre
 		return ErrInvalidInput
 	}
 
-	if target != n && bytes.HasPrefix(newPath, path) {
+	if target == n && bytes.HasPrefix(newPath, path) {
 		return ErrInvalidInput
 	}
 
