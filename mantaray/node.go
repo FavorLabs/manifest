@@ -334,6 +334,9 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 		return ctx.Err()
 	default:
 	}
+	if err := node.load(ctx, ls); err != nil {
+		return err
+	}
 	if n.refBytesSize == 0 {
 		if len(node.entry) > 256 {
 			return fmt.Errorf("node entry size > 256: %d", len(node.entry))
@@ -466,13 +469,6 @@ func (n *Node) move(ctx context.Context, target *Node, path, newPath []byte, cre
 	source, sourcePrefix, err := n.matchPath(ctx, path, ls)
 	if err != nil {
 		return err
-	}
-
-	if len(source.forks) == 0 {
-		err = source.load(ctx, ls)
-		if err != nil {
-			return err
-		}
 	}
 
 	sourcePath := sourcePrefix
