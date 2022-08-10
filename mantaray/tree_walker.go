@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"container/list"
 	"context"
-	"errors"
 	"math"
 	"sort"
 )
@@ -16,11 +15,6 @@ const (
 	Directory
 
 	MaxLevel = math.MaxUint32
-)
-
-var (
-	errMaxHeight      = errors.New("reach maximum directory level")
-	errAlreadyEntered = errors.New("already entered the directory")
 )
 
 func copyPath(src []byte) []byte {
@@ -114,7 +108,7 @@ func (n *Node) lookupClosest(ctx context.Context, path []byte, l Loader) (*Node,
 	if !bytes.HasPrefix(f.prefix, path) {
 		return nil, path, ErrNotFound
 	}
-	return f.Node, f.prefix[len(path):], errAlreadyEntered
+	return f.Node, f.prefix[len(path):], nil
 }
 
 type nodeTag struct {
@@ -132,24 +126,16 @@ func walkBreathFirst(ctx context.Context, l Loader, n *Node, path []byte, level 
 		prefix: []byte{},
 	}
 
-	if len(remain) == 0 {
-		root.level++
+	if err != nil {
+		return err
 	}
 
-	if err != nil {
-		if !errors.Is(err, errAlreadyEntered) {
-			return err
-		}
-		slashIndex := bytes.IndexByte(remain, byte(PathSeparator))
-		if slashIndex == -1 {
-			root.level++
-			root.prefix = remain
-		} else {
-			if bytes.HasSuffix(path, remain[slashIndex+1:]) {
-				root.level++
-			}
-			root.prefix = remain[slashIndex+1:]
-		}
+	slashIndex := bytes.IndexByte(remain, byte(PathSeparator))
+	if slashIndex == -1 || !bytes.HasSuffix(path, remain[:slashIndex+1]) {
+		root.level++
+		root.prefix = remain
+	} else {
+		root.prefix = remain[slashIndex+1:]
 	}
 
 	q := list.New()
