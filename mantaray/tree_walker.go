@@ -105,13 +105,16 @@ func (n *Node) lookupClosest(ctx context.Context, path []byte, l Loader) (*Node,
 	}
 	f := n.forks[path[0]]
 	if f == nil {
-		return n, path, nil
+		return nil, path, ErrNotFound
 	}
 	c := common(f.prefix, path)
 	if len(c) == len(f.prefix) {
 		return f.Node.lookupClosest(ctx, path[len(c):], l)
 	}
-	return f.Node, f.prefix[len(c):], errAlreadyEntered
+	if !bytes.HasPrefix(f.prefix, path) {
+		return nil, path, ErrNotFound
+	}
+	return f.Node, f.prefix[len(path):], errAlreadyEntered
 }
 
 type nodeTag struct {
