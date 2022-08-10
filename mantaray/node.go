@@ -29,6 +29,7 @@ var (
 	ErrEmptyPath        = errors.New("empty path")
 	ErrInvalidFile      = errors.New("invalid file")
 	ErrMetadataTooLarge = errors.New("metadata too large")
+	ErrForbiddenAction  = errors.New("forbidden action")
 )
 
 // Node represents a mantaray Node
@@ -499,11 +500,11 @@ func (n *Node) move(ctx context.Context, target *Node, path, newPath []byte, cre
 	targetDir := newPath[len(newPath)-1] == PathSeparator
 
 	if sourceDir && !targetDir {
-		return ErrInvalidInput
+		return ErrForbiddenAction
 	}
 
 	if target == n && bytes.HasPrefix(newPath, path) {
-		return ErrInvalidInput
+		return ErrForbiddenAction
 	}
 
 	source, sourcePrefix, err := n.matchPath(ctx, path, ls)
