@@ -27,6 +27,7 @@ func init() {
 var (
 	ErrNotFound         = errors.New("not found")
 	ErrEmptyPath        = errors.New("empty path")
+	ErrInvalidFile      = errors.New("invalid file")
 	ErrMetadataTooLarge = errors.New("metadata too large")
 )
 
@@ -224,6 +225,15 @@ func (n *Node) Add(ctx context.Context, path, entry []byte, metadata map[string]
 	nn := New()
 	nn.entry = entry
 
+	if bytes.Equal(nn.entry, zero32) {
+		if path[len(path)-1] != PathSeparator {
+			return ErrInvalidFile
+		}
+		nn.makeEmptyDirectory()
+	} else {
+		nn.makeValue()
+	}
+
 	if len(metadata) > 0 {
 		nn.metadata = metadata
 		nn.makeWithMetadata()
@@ -268,10 +278,10 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 		if len(rest) == 0 {
 			if f.IsValueType() {
 				f.makeNotValue()
-				f.entry = nil
 			}
 			if f.IsWithPathSeparatorType() {
 				f.prefix = f.prefix[:bytes.LastIndexByte(f.prefix, PathSeparator)+1]
+				copy(f.entry, zero32)
 				f.makeEmptyDirectory()
 				f.updateIsWithPathSeparator(f.prefix)
 			}
@@ -297,7 +307,7 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 		} else {
 			if f.IsValueType() {
 				f.makeNotValue()
-				f.entry = nil
+				copy(f.entry, zero32)
 			}
 			f.makeEmptyDirectory()
 			f.ref = nil
@@ -379,11 +389,7 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 
 	if len(path) == 0 {
 		n.entry = node.entry
-		if node.nodeType != 0 {
-			n.nodeType |= node.nodeType
-		} else {
-			n.makeValue()
-		}
+		n.nodeType |= node.nodeType
 		if len(node.metadata) > 0 {
 			n.metadata = node.metadata
 		}
@@ -430,9 +436,6 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 		if len(node.obfuscationKey) == 0 && len(n.obfuscationKey) > 0 {
 			node.SetObfuscationKey(n.obfuscationKey)
 		}
-		if !node.IsEdgeType() {
-			node.makeValue()
-		}
 		node.updateIsWithPathSeparator(path)
 		n.forks[path[0]] = &fork{path, node}
 		n.ref = nil
@@ -452,10 +455,6 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 		f.Node.updateIsWithPathSeparator(rest)
 		nn.forks[rest[0]] = &fork{rest, f.Node}
 		nn.makeEdge()
-		// if common path is full path new node is value type
-		if len(path) == len(c) {
-			nn.makeValue()
-		}
 	}
 	// NOTE: special case on edge split
 	nn.updateIsWithPathSeparator(path)
