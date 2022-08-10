@@ -286,7 +286,7 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 				f.makeEmptyDirectory()
 				f.updateIsWithPathSeparator(f.prefix)
 			}
-			if !f.IsWithPathSeparatorType() {
+			if !f.IsWithPathSeparatorType() && len(f.forks) == 0 {
 				delete(n.forks, path[0])
 			}
 			// clear ref
