@@ -271,8 +271,7 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 		return ErrNotFound
 	}
 	if len(f.prefix) <= len(path) {
-		prefixIndex := bytes.Index(path, f.prefix)
-		if prefixIndex != 0 {
+		if !bytes.HasPrefix(path, f.prefix) {
 			return ErrNotFound
 		}
 		rest := path[len(f.prefix):]
@@ -280,7 +279,9 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 			if f.IsValueType() {
 				f.makeNotValue()
 			}
-			if f.IsWithPathSeparatorType() {
+			// first slash not recognized as path type
+			if f.prefix[0] == PathSeparator || f.IsWithPathSeparatorType() {
+				f.forks = make(map[byte]*fork, 0)
 				f.prefix = f.prefix[:bytes.LastIndexByte(f.prefix, PathSeparator)+1]
 				copy(f.entry, zero32)
 				f.makeEmptyDirectory()
@@ -322,9 +323,12 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 		for _, fork := range f.forks {
 			ff = fork
 		}
-		ff.prefix = append(f.prefix, ff.prefix...)
 		// merge fork
-		n.forks[path[0]] = ff
+		delete(n.forks, f.prefix[0])
+		err := n.addNode(ctx, append(f.prefix, ff.prefix...), ff.Node, ls)
+		if err != nil {
+			return err
+		}
 	}
 	// clear parent ref recursively
 	n.ref = nil
