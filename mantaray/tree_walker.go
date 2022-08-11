@@ -101,12 +101,16 @@ func (n *Node) lookupClosest(ctx context.Context, path []byte, l Loader) (*Node,
 	if f == nil {
 		return nil, path, ErrNotFound
 	}
-	c := common(f.prefix, path)
-	if len(c) == len(f.prefix) {
-		return f.Node.lookupClosest(ctx, path[len(c):], l)
+	if len(f.prefix) < len(path) {
+		c := common(f.prefix, path)
+		if len(c) == len(f.prefix) {
+			return f.Node.lookupClosest(ctx, path[len(c):], l)
+		}
+
+		return nil, nil, ErrNotFound
 	}
 	if !bytes.HasPrefix(f.prefix, path) {
-		return nil, path, ErrNotFound
+		return nil, nil, ErrNotFound
 	}
 	return f.Node, f.prefix[len(path):], nil
 }
