@@ -380,6 +380,7 @@ func (n *Node) clone(other *Node) {
 	if len(other.metadata) > 0 {
 		n.metadata = other.metadata
 	}
+	// TODO merge
 	if len(other.forks) > 0 {
 		n.forks = other.forks
 	}
@@ -522,6 +523,9 @@ func (n *Node) move(ctx context.Context, target *Node, path, newPath []byte, cre
 
 	sourcePath := sourcePrefix
 	if !sourceDir {
+		if !source.IsValueType() {
+			return ErrNotFound
+		}
 		sourcePath = path[bytes.LastIndexByte(path, PathSeparator)+1:]
 		// clone value node
 		nn := New()
@@ -536,15 +540,15 @@ func (n *Node) move(ctx context.Context, target *Node, path, newPath []byte, cre
 		source = nn
 	}
 
+	if !create {
+		_, _, err = target.lookupClosest(ctx, newPath, ls)
+		if err != nil {
+			return err
+		}
+	}
+
 	targetPath := newPath
 	if targetDir {
-		if !create {
-			_, _, err = target.lookupClosest(ctx, newPath, ls)
-			if err != nil {
-				return err
-			}
-		}
-
 		targetPath = append(newPath, sourcePath...)
 	}
 
