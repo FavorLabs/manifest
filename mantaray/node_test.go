@@ -637,7 +637,7 @@ func TestMove(t *testing.T) {
 			source := tc.target[0]
 			target := tc.target[1]
 
-			err := n.Move(ctx, n, source, target, false, ls)
+			err := n.Move(ctx, n, source, target, true, ls)
 			if err != nil {
 				t.Fatal(err)
 			}
