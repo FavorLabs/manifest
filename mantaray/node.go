@@ -287,7 +287,7 @@ func (n *Node) Remove(ctx context.Context, path []byte, ls LoadSaver) error {
 				f.makeEmptyDirectory()
 				f.updateIsWithPathSeparator(f.prefix)
 			}
-			if !f.IsWithPathSeparatorType() && len(f.forks) == 0 {
+			if (f.prefix[0] != PathSeparator && !f.IsWithPathSeparatorType()) && len(f.forks) == 0 {
 				delete(n.forks, path[0])
 			}
 			// clear ref
@@ -372,7 +372,10 @@ func (n *Node) HasPrefix(ctx context.Context, path []byte, l Loader) (bool, erro
 }
 
 func (n *Node) clone(other *Node) {
-	n.entry = other.entry
+	if len(n.entry) == 0 {
+		n.entry = make([]byte, len(other.entry))
+	}
+	copy(n.entry, other.entry)
 	n.nodeType |= other.nodeType
 	if other.refBytesSize != 0 {
 		n.refBytesSize = other.refBytesSize
@@ -446,12 +449,17 @@ func (n *Node) addNode(ctx context.Context, path []byte, node *Node, ls LoadSave
 			n.makeEdge()
 			return nil
 		}
-		node.ref = nil
-		if node.refBytesSize == 0 {
-			node.refBytesSize = n.refBytesSize
-		}
-		if len(node.obfuscationKey) == 0 && len(n.obfuscationKey) > 0 {
-			node.SetObfuscationKey(n.obfuscationKey)
+		if node.ref != nil {
+			nn := New()
+			nn.clone(node)
+			node = nn
+		} else {
+			if node.refBytesSize == 0 {
+				node.refBytesSize = n.refBytesSize
+			}
+			if len(node.obfuscationKey) == 0 && len(n.obfuscationKey) > 0 {
+				node.SetObfuscationKey(n.obfuscationKey)
+			}
 		}
 		node.updateIsWithPathSeparator(path)
 		n.forks[path[0]] = &fork{path, node}
