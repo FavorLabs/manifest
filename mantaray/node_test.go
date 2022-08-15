@@ -277,6 +277,18 @@ func TestRemove(t *testing.T) {
 				[]byte("img/"),
 			},
 		},
+		{
+			name: "long-prefix-merge",
+			toAdd: []mantaray.NodeEntry{
+				{
+					Path:  []byte("abc/abcdefghijklmnopqrstuvwxyz/uvwxyz/.hidden"),
+					Entry: []byte("0000000000000000000000000000000"),
+				},
+			},
+			toRemove: [][]byte{
+				[]byte("abc/abcdefghijklmnopqrstuvwxyz/uvwxyz/.hidden"),
+			},
+		},
 	} {
 		ctx := context.Background()
 		t.Run(tc.name, func(t *testing.T) {
@@ -625,7 +637,7 @@ func TestMove(t *testing.T) {
 			source := tc.target[0]
 			target := tc.target[1]
 
-			err := n.Move(ctx, n, source, target, false, ls)
+			err := n.Move(ctx, n, source, target, true, ls)
 			if err != nil {
 				t.Fatal(err)
 			}
